@@ -1,0 +1,171 @@
+faced a good number of issues:
+
+start with cleaning up all traces of the package from the sytem
+
+   14  dpkg -l | grep puppet
+   15  apt-get remove --purge puppet-agent puppet5-release puppetserver 
+   16  apt-get clean
+   17  deborphan
+   18  apt install deborphan
+   19  deborphan | xargs apt-get -y remove --purge
+   20  apt-get clean
+   21  dpkg -l | grep puppet
+
+
+
+use the following section:
+
+for server:
+   25  lsb_release -a 
+   26  wget https://apt.puppetlabs.com/puppet5-release-xenial.deb
+   27  ls
+   28  rm -rfv puppet5-release-xenial.deb 
+   29  cd
+   30  wget https://apt.puppetlabs.com/puppet5-release-xenial.deb
+   31  ls
+   32  rm -rfv puppet5-release-xenial.deb puppet5-release-xenial.deb.1 
+   33  ls
+   34  wget https://apt.puppetlabs.com/puppet5-release-xenial.deb
+   35  ls
+   36  dpkg -i puppet5-release-xenial.deb
+   37  apt update
+   38  export PATH=/opt/puppetlabs/bin:$PATH
+   39  apt-get install puppetserver
+
+
+for agent:
+   91  lsb_release -a
+   92  cd
+   93  wget https://apt.puppetlabs.com/puppet5-release-xenial.deb
+   94  ls
+   95  rm -rfv puppet5-release-xenial.deb puppet5-release-xenial.deb.1 
+   96  wget https://apt.puppetlabs.com/puppet5-release-xenial.deb
+   97  dpkg -i puppet5-release-xenial.deb
+   98  apt update
+   99  export PATH=/opt/puppetlabs/bin:$PATH
+  100  apt-get install puppet-agent
+
+then proceed by making entries in /etc/hosts file in both for all of the associated nodes and agents
+ip  hostname
+
+^^ in that manner
+
+Next test with "puppet agent -t" in the agent 
+
+with this you should come across an output more or less like this:
+
+/etc/puppetlabs/puppet# puppet agent --test
+Warning: Unable to fetch my node definition, but the agent run will continue:
+Warning: Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Info: Retrieving pluginfacts
+Error: /File[/opt/puppetlabs/puppet/cache/facts.d]: Failed to generate additional resources using 'eval_generate': Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Error: /File[/opt/puppetlabs/puppet/cache/facts.d]: Could not evaluate: Could not retrieve file metadata for puppet:///pluginfacts: Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Info: Retrieving plugin
+Error: /File[/opt/puppetlabs/puppet/cache/lib]: Failed to generate additional resources using 'eval_generate': Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Error: /File[/opt/puppetlabs/puppet/cache/lib]: Could not evaluate: Could not retrieve file metadata for puppet:///plugins: Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Error: Could not retrieve catalog from remote server: Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+Warning: Not using cache on failed catalog
+Error: Could not retrieve catalog; skipping run
+Error: Could not send report: Failed to open TCP connection to puppet:8140 (getaddrinfo: Name or service not known)
+
+
+So config changes need to be done. 
+----------------------
+change1: in /etc/hosts
+-----------------------
+for the puppetserver entry you also need to add puppet 
+for instance
+
+ip hostname,puppet
+------------------------
+change2: in /etc/puppetlabs/puppet/puppet.conf
+------------------------
+This is my puppet agent conf
+
+root@apacemc3:/etc/puppetlabs/puppet# cat puppet.conf 
+# This file can be used to override the default puppet settings.
+# See the following links for more details on what settings are available:
+# - https://puppet.com/docs/puppet/latest/config_important_settings.html
+# - https://puppet.com/docs/puppet/latest/config_about_settings.html
+# - https://puppet.com/docs/puppet/latest/config_file_main.html
+# - https://puppet.com/docs/puppet/latest/configuration.html
+
+[main]
+certname = apacemc3.mylabserver.com
+server = puppet
+environment = production
+runinterval = 1m
+root@apacemc3:/etc/puppetlabs/puppet# 
+
+
+
+
+this is my puppet server conf
+
+root@apacemc5:/etc/puppetlabs/puppet# cat puppet.conf 
+# This file can be used to override the default puppet settings.
+# See the following links for more details on what settings are available:
+# - https://puppet.com/docs/puppet/latest/config_important_settings.html
+# - https://puppet.com/docs/puppet/latest/config_about_settings.html
+# - https://puppet.com/docs/puppet/latest/config_file_main.html
+# - https://puppet.com/docs/puppet/latest/configuration.html
+[main]
+certname = apacemc5.mylabserver.com
+server = puppet
+environment = production
+runinterval = 1m
+
+[master]
+dns_alt_names = apacemc5.mylabserver.com,puppet
+vardir = /opt/puppetlabs/server/data/puppetserver
+logdir = /var/log/puppetlabs/puppetserver
+rundir = /var/run/puppetlabs/puppetserver
+pidfile = /var/run/puppetlabs/puppetserver/puppetserver.pid
+codedir = /etc/puppetlabs/code
+root@apacemc5:/etc/puppetlabs/puppet# 
+-------------------------------
+
+Once this is done, you should get an output like 
+
+root@apacemc3:/etc/puppetlabs/puppet# puppet agent --test
+Info: Using configured environment 'production'
+Info: Retrieving pluginfacts
+Info: Retrieving plugin
+Info: Retrieving locales
+Info: Caching catalog for apacemc3.mylabserver.com
+Info: Applying configuration version '1529928759'
+
+else you can justgo ahead with 
+
+root@apacemc3:/etc/puppetlabs/puppet# puppet agent --server apacemc5.mylabserver.com  --waitforcert 10 --test
+Info: Using configured environment 'production'
+Info: Retrieving pluginfacts
+Info: Retrieving plugin
+Info: Retrieving locales
+Info: Caching catalog for apacemc3.mylabserver.com
+Info: Applying configuration version '1529928218'
+Notice: Applied catalog in 0.01 seconds
+
+Any cmd parameters have higher priority.
+
+
+next section is about certificate signing:
+
+root@apacemc5:~# puppet cert --list
+  "apacemc3.mylabserver.com" (SHA256) 52:12:F3:A7:F7:1F:1E:65:D5:39:4E:7F:34:92:7D:31:E1:5D:7D:54:BA:15:E6:90:95:26:2E:69:FC:94:2E:02
+root@apacemc5:~# puppet cert --sign puppetclient
+Error: Could not find CSR for: "puppetclient".
+root@apacemc5:~# ^C
+root@apacemc5:~# puppet cert --sign apacemc3.mylabserver.com
+Signing Certificate Request for:
+  "apacemc3.mylabserver.com" (SHA256) 52:12:F3:A7:F7:1F:1E:65:D5:39:4E:7F:34:92:7D:31:E1:5D:7D:54:BA:15:E6:90:95:26:2E:69:FC:94:2E:02
+Notice: Signed certificate request for apacemc3.mylabserver.com
+Notice: Removing file Puppet::SSL::CertificateRequest apacemc3.mylabserver.com at '/etc/puppetlabs/puppet/ssl/ca/requests/apacemc3.mylabserver.com.pem'
+root@apacemc5:~# puppet cert --list
+root@apacemc5:~# 
+root@apacemc5:~# 
+root@apacemc5:~# 
+root@apacemc5:~# puppet cert --list --all
++ "apacemc3.mylabserver.com" (SHA256) C9:A2:72:5B:DC:85:4A:F8:67:E6:4F:C9:C3:EF:AE:90:1A:66:78:90:CA:5E:DA:E4:CD:0A:03:83:D6:4B:A1:EB
++ "apacemc5.mylabserver.com" (SHA256) DF:C8:26:1E:99:47:1C:12:E3:FB:4E:B8:65:6B:39:89:8B:73:04:13:59:C4:BF:A2:64:C7:0E:18:62:B0:F2:76 (alt names: "DNS:apacemc5.mylabserver.com", "DNS:puppet", "DNS:puppet.mylabserver.com")
+root@apacemc5:~# 
